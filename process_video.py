@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+import subprocess
+import logging
+import tempfile
+from pathlib import Path
+import config
+import utils
+
+def run_ffmpeg_command(cmd, description=""):
+    """Выполнение команды FFmpeg с логированием"""
+    logging.info(f"Выполняется: {description}")
+    
+    # Используем локальный ffmpeg если он есть
+    if cmd[0] == 'ffmpeg':
+        ffmpeg_path = Path(__file__).parent / 'ffmpeg'
+        if ffmpeg_path.exists():
+            cmd[0] = str(ffmpeg_path)
+    
+    logging.debug(f"Команда: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            logging.error(f"Ошибка FFmpeg: {result.stderr}")
+            return False
+        
+        logging.info(f"Успешно: {description}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка выполнения команды: {e}")
+        return False
+
+def find_background_image():
+    """Поиск фонового изображения"""
+    bg_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+    search_dirs = [Path('.'), Path('./input'), Path('./test')]
+    
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        for file_path in search_dir.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in bg_extensions:
+                # Проверяем что это не скриншот
+                if 'снимок' not in file_path.name.lower() and 'screenshot' not in file_path.name.lower():
+                    logging.info(f"Найден фон: {file_path}")
+                    return file_path
+    
+    logging.warning("Фоновое изображение не найдено, будет использован серый фон")
+    return None
+
+def create_time_fragment(input_path, output_path, start_time, duration):
+    """Создание временного фрагмента из исходного видео"""
+    cmd = [
+        'ffmpeg',
+        '-i', str(input_path),
+        '-ss', str(start_time),
+        '-t', str(duration),
+        '-c', 'copy',
+        '-y',
+        str(output_path)
+    ]
+    
+    return run_ffmpeg_command(cmd, f"Создание временного фрагмента ({duration}с с {start_time:.2f}с)")
+
+def crop_area(input_path, output_path, area_config, area_name):
+    """Обрезка области из уже временного фрагмента"""
+    cmd = [
+        'ffmpeg',
+        '-i', str(input_path),
+        '-filter:v', f"crop={area_config['width']}:{area_config['height']}:{area_config['x']}:{area_config['y']}",
+        '-c:a', 'copy',
+        '-y',
+        str(output_path)
+    ]
+    
+    return run_ffmpeg_command(cmd, f"Обрезка области: {area_name}")
+
+def create_vertical_video(game_path, camera_path, output_path):
+    """Создание вертикального видео из двух частей с фоном"""
+    output_config = config.OUTPUT_VIDEO
+    ffmpeg_params = config.FFMPEG_PARAMS
+    
+    # Камера сверху 800px, игра снизу в оригинальном размере
+    camera_height = 800
+    game_original_height = config.GAME_AREA['height']  # 415px - оригинальный размер
+    
+    # Ищем фоновое изображение
+    bg_image = find_background_image()
+    
+    if bg_image:
+        # С фоновым изображением пушок
+        cmd = [
+            'ffmpeg',
+            '-loop', '1', '-i', str(bg_image),  # Фоновое изображение
+            '-i', str(game_path),               # Игра
+            '-i', str(camera_path),             # Камера
+            '-filter_complex', f"""
+            [0:v]scale={output_config['width']}:{output_config['height']}[bg];
+            [1:v]scale={output_config['width']}:{game_original_height}[game];
+            [2:v]scale={output_config['width']}:{camera_height}[camera];
+            [bg][camera]overlay=0:0[bg_with_camera];
+            [bg_with_camera][game]overlay=0:{camera_height}[final]
+            """.strip().replace('\n', '').replace('    ', ''),
+            '-map', '[final]',
+            '-map', '1:a',  # Аудио из игрового видео
+            '-c:v', ffmpeg_params['codec'],
+            '-preset', 'fast',
+            '-crf', str(ffmpeg_params['crf']),
+            '-r', str(output_config['fps']),
+            '-t', str(config.TEST_FRAGMENT['duration']),
+            '-y',
+            str(output_path)
+        ]
+    else:
+        # Без фонового изображения - серый фон
+        filter_complex = f"""
+        [0:v]scale={output_config['width']}:{game_original_height}[game];
+        [1:v]scale={output_config['width']}:{camera_height}[camera];
+        color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
+        [bg][camera]overlay=0:0[bg_with_camera];
+        [bg_with_camera][game]overlay=0:{camera_height}[final]
+        """.strip().replace('\n', '').replace('    ', '')
+        
+        cmd = [
+            'ffmpeg',
+            '-i', str(game_path),
+            '-i', str(camera_path),
+            '-filter_complex', filter_complex,
+            '-map', '[final]',
+            '-map', '0:a',
+            '-c:v', ffmpeg_params['codec'],
+            '-preset', 'fast',
+            '-crf', str(ffmpeg_params['crf']),
+            '-r', str(output_config['fps']),
+            '-t', str(config.TEST_FRAGMENT['duration']),
+            '-y',
+            str(output_path)
+        ]
+    
+    return run_ffmpeg_command(cmd, "Создание вертикального видео с пушком")
+
+def process_video(input_path, test_mode=False):
+    """Основная функция обработки видео"""
+    logging.info(f"Начинается обработка видео: {input_path}")
+    
+    # Получаем информацию о видео
+    video_info = utils.get_video_info(input_path)
+    if not video_info:
+        logging.error("Не удалось получить информацию о видео")
+        return False
+    
+    # Проверяем координаты кропа
+    if not utils.validate_crop_coordinates(video_info['width'], video_info['height']):
+        logging.error("Некорректные координаты кропа")
+        return False
+    
+    # Создаем временные файлы
+    temp_files = []
+    try:
+        # Временный фрагмент по времени
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as time_fragment:
+            time_fragment_path = Path(time_fragment.name)
+            temp_files.append(time_fragment_path)
+        
+        # Обрезанная игровая область
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as game_temp:
+            game_temp_path = Path(game_temp.name)
+            temp_files.append(game_temp_path)
+        
+        # Обрезанная область камеры
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as camera_temp:
+            camera_temp_path = Path(camera_temp.name)
+            temp_files.append(camera_temp_path)
+        
+        # ШАГ 1: Создаем временной фрагмент из оригинального видео
+        if test_mode:
+            start_time = utils.calculate_test_fragment_time(video_info['duration'])
+            duration = config.TEST_FRAGMENT['duration']
+        else:
+            start_time = 0
+            duration = video_info['duration']
+        
+        if not create_time_fragment(input_path, time_fragment_path, start_time, duration):
+            logging.error("Ошибка создания временного фрагмента")
+            return False
+        
+        # ШАГ 2: Обрезаем игровую область из временного фрагмента
+        if not crop_area(time_fragment_path, game_temp_path, config.GAME_AREA, "игровая"):
+            logging.error("Ошибка обрезки игровой области")
+            return False
+        
+        # ШАГ 3: Обрезаем область с камерой из временного фрагмента
+        if not crop_area(time_fragment_path, camera_temp_path, config.CAMERA_AREA, "камера"):
+            logging.error("Ошибка обрезки области с камерой")
+            return False
+        
+        # ШАГ 4: Создаем вертикальное видео из двух обрезанных частей
+        suffix = "test" if test_mode else ""
+        output_path = utils.generate_output_filename(input_path, suffix=suffix)
+        
+        if not create_vertical_video(game_temp_path, camera_temp_path, output_path):
+            logging.error("Ошибка создания вертикального видео")
+            return False
+        
+        logging.info(f"Обработка завершена! Результат: {output_path}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка обработки видео: {e}")
+        return False
+        
+    finally:
+        # Очищаем временные файлы
+        utils.cleanup_temp_files(temp_files)
+
+def main():
+    """Главная функция"""
+    # Настройка логирования
+    utils.setup_logging()
+    
+    # Создание необходимых папок
+    utils.create_directories()
+    
+    # Поиск последнего видео
+    video_path = utils.find_latest_video()
+    if not video_path:
+        logging.error("Видео для обработки не найдено")
+        return
+    
+    # Обработка тестового фрагмента (15 секунд)
+    success = process_video(video_path, test_mode=True)
+    
+    if success:
+        logging.info("Обработка завершена успешно!")
+    else:
+        logging.error("Ошибка обработки видео")
+
+if __name__ == "__main__":
+    main()
