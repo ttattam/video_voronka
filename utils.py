@@ -108,14 +108,19 @@ def get_video_info(video_path):
         return None
 
 def calculate_test_fragment_time(video_duration):
-    """Вычисление времени начала тестового фрагмента из центра видео"""
+    """Вычисление времени начала тестового фрагмента из случайного места"""
+    import random
+    
     test_duration = config.TEST_FRAGMENT['duration']
     
     if video_duration <= test_duration:
         return 0  # Если видео короче тестового фрагмента, начинаем с начала
     
-    # Начинаем с центра видео
-    start_time = (video_duration - test_duration) / 2
+    # Случайное время от 0 до (длительность - тестовый фрагмент)
+    max_start_time = video_duration - test_duration
+    start_time = random.uniform(0, max_start_time)
+    
+    logging.info(f"Случайный фрагмент: {start_time:.2f}с - {start_time + test_duration:.2f}с")
     return start_time
 
 def validate_crop_coordinates(video_width, video_height):
