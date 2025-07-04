@@ -2,6 +2,7 @@
 import subprocess
 import logging
 import tempfile
+import random
 from pathlib import Path
 import config
 import utils
@@ -215,6 +216,165 @@ def process_video(input_path, test_mode=False):
         # Очищаем временные файлы
         utils.cleanup_temp_files(temp_files)
 
+def create_multiple_clips(input_path, num_clips=20, clip_duration=15):
+    """Создание множественных клипов из рандомных мест видео"""
+    logging.info(f"Начинается создание {num_clips} клипов по {clip_duration}с каждый")
+    
+    # Получаем информацию о видео
+    video_info = utils.get_video_info(input_path)
+    if not video_info:
+        logging.error("Не удалось получить информацию о видео")
+        return False
+    
+    # Проверяем координаты кропа
+    if not utils.validate_crop_coordinates(video_info['width'], video_info['height']):
+        logging.error("Некорректные координаты кропа")
+        return False
+    
+    total_duration = video_info['duration']
+    
+    # Проверяем что видео достаточно длинное для создания клипов
+    if total_duration < clip_duration:
+        logging.error(f"Видео слишком короткое ({total_duration}с) для создания клипов по {clip_duration}с")
+        return False
+    
+    # Генерируем рандомные стартовые времена
+    max_start_time = total_duration - clip_duration
+    start_times = []
+    
+    for i in range(num_clips):
+        start_time = random.uniform(0, max_start_time)
+        start_times.append(start_time)
+    
+    # Сортируем времена для удобства
+    start_times.sort()
+    
+    logging.info(f"Сгенерированы стартовые времена: {[f'{t:.2f}' for t in start_times]}")
+    
+    successful_clips = 0
+    
+    for i, start_time in enumerate(start_times, 1):
+        logging.info(f"Создание клипа {i}/{num_clips} (старт: {start_time:.2f}с)")
+        
+        # Создаем временные файлы для этого клипа
+        temp_files = []
+        try:
+            # Временный фрагмент по времени
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as time_fragment:
+                time_fragment_path = Path(time_fragment.name)
+                temp_files.append(time_fragment_path)
+            
+            # Обрезанная игровая область
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as game_temp:
+                game_temp_path = Path(game_temp.name)
+                temp_files.append(game_temp_path)
+            
+            # Обрезанная область камеры
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as camera_temp:
+                camera_temp_path = Path(camera_temp.name)
+                temp_files.append(camera_temp_path)
+            
+            # ШАГ 1: Создаем временной фрагмент из оригинального видео
+            if not create_time_fragment(input_path, time_fragment_path, start_time, clip_duration):
+                logging.error(f"Ошибка создания временного фрагмента для клипа {i}")
+                continue
+            
+            # ШАГ 2: Обрезаем игровую область из временного фрагмента
+            if not crop_area(time_fragment_path, game_temp_path, config.GAME_AREA, "игровая"):
+                logging.error(f"Ошибка обрезки игровой области для клипа {i}")
+                continue
+            
+            # ШАГ 3: Обрезаем область с камерой из временного фрагмента
+            if not crop_area(time_fragment_path, camera_temp_path, config.CAMERA_AREA, "камера"):
+                logging.error(f"Ошибка обрезки области с камерой для клипа {i}")
+                continue
+            
+            # ШАГ 4: Создаем вертикальное видео из двух обрезанных частей
+            suffix = f"clip_{i:02d}"
+            output_path = utils.generate_output_filename(input_path, suffix=suffix)
+            
+            if not create_vertical_video_clip(game_temp_path, camera_temp_path, output_path, clip_duration):
+                logging.error(f"Ошибка создания вертикального видео для клипа {i}")
+                continue
+            
+            successful_clips += 1
+            logging.info(f"Клип {i} готов: {output_path}")
+            
+        except Exception as e:
+            logging.error(f"Ошибка создания клипа {i}: {e}")
+            continue
+            
+        finally:
+            # Очищаем временные файлы
+            utils.cleanup_temp_files(temp_files)
+    
+    logging.info(f"Создание клипов завершено! Успешно создано: {successful_clips}/{num_clips}")
+    return successful_clips > 0
+
+def create_vertical_video_clip(game_path, camera_path, output_path, duration):
+    """Создание вертикального видео из двух частей с фоном (для клипов)"""
+    output_config = config.OUTPUT_VIDEO
+    ffmpeg_params = config.FFMPEG_PARAMS
+    
+    # Камера сверху 800px, игра снизу в оригинальном размере
+    camera_height = 800
+    game_original_height = config.GAME_AREA['height']  # 415px - оригинальный размер
+    
+    # Ищем фоновое изображение
+    bg_image = find_background_image()
+    
+    if bg_image:
+        # С фоновым изображением пушок
+        cmd = [
+            'ffmpeg',
+            '-loop', '1', '-i', str(bg_image),  # Фоновое изображение
+            '-i', str(game_path),               # Игра
+            '-i', str(camera_path),             # Камера
+            '-filter_complex', f"""
+            [0:v]scale={output_config['width']}:{output_config['height']}[bg];
+            [1:v]scale={output_config['width']}:{game_original_height}[game];
+            [2:v]scale={output_config['width']}:{camera_height}[camera];
+            [bg][camera]overlay=0:0[bg_with_camera];
+            [bg_with_camera][game]overlay=0:{camera_height}[final]
+            """.strip().replace('\n', '').replace('    ', ''),
+            '-map', '[final]',
+            '-map', '1:a',  # Аудио из игрового видео
+            '-c:v', ffmpeg_params['codec'],
+            '-preset', 'fast',
+            '-crf', str(ffmpeg_params['crf']),
+            '-r', str(output_config['fps']),
+            '-t', str(duration),
+            '-y',
+            str(output_path)
+        ]
+    else:
+        # Без фонового изображения - серый фон
+        filter_complex = f"""
+        [0:v]scale={output_config['width']}:{game_original_height}[game];
+        [1:v]scale={output_config['width']}:{camera_height}[camera];
+        color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
+        [bg][camera]overlay=0:0[bg_with_camera];
+        [bg_with_camera][game]overlay=0:{camera_height}[final]
+        """.strip().replace('\n', '').replace('    ', '')
+        
+        cmd = [
+            'ffmpeg',
+            '-i', str(game_path),
+            '-i', str(camera_path),
+            '-filter_complex', filter_complex,
+            '-map', '[final]',
+            '-map', '0:a',
+            '-c:v', ffmpeg_params['codec'],
+            '-preset', 'fast',
+            '-crf', str(ffmpeg_params['crf']),
+            '-r', str(output_config['fps']),
+            '-t', str(duration),
+            '-y',
+            str(output_path)
+        ]
+    
+    return run_ffmpeg_command(cmd, f"Создание вертикального видео клипа ({duration}с)")
+
 def main():
     """Главная функция"""
     # Настройка логирования
@@ -229,13 +389,41 @@ def main():
         logging.error("Видео для обработки не найдено")
         return
     
-    # Обработка тестового фрагмента (15 секунд)
-    success = process_video(video_path, test_mode=True)
+    # Спрашиваем у пользователя что делать
+    print("\nВыберите режим:")
+    print("1. Создать один тестовый клип (15 сек)")
+    print("2. Создать 20 случайных клипов (по 15 сек каждый)")
+    print("3. Обработать все видео целиком")
     
-    if success:
-        logging.info("Обработка завершена успешно!")
+    choice = input("Ваш выбор (1-3): ").strip()
+    
+    if choice == '1':
+        # Обработка тестового фрагмента (15 секунд)
+        success = process_video(video_path, test_mode=True)
+        if success:
+            logging.info("Тестовый клип создан успешно!")
+        else:
+            logging.error("Ошибка создания тестового клипа")
+    
+    elif choice == '2':
+        # Создание 20 случайных клипов
+        success = create_multiple_clips(video_path, num_clips=20, clip_duration=15)
+        if success:
+            logging.info("Случайные клипы созданы успешно!")
+        else:
+            logging.error("Ошибка создания случайных клипов")
+    
+    elif choice == '3':
+        # Обработка всего видео
+        success = process_video(video_path, test_mode=False)
+        if success:
+            logging.info("Полная обработка завершена успешно!")
+        else:
+            logging.error("Ошибка полной обработки видео")
+    
     else:
-        logging.error("Ошибка обработки видео")
+        print("Неверный выбор. Завершение.")
+        return
 
 if __name__ == "__main__":
     main()

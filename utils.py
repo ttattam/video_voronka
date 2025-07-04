@@ -27,8 +27,8 @@ def create_directories():
 def find_latest_video(directory=None):
     """Поиск последнего видео по дате изменения"""
     if directory is None:
-        # Сначала ищем в input, потом в test
-        search_dirs = [config.INPUT_DIR, config.TEST_DIR]
+        # Ищем только в input папке
+        search_dirs = [config.INPUT_DIR]
     else:
         search_dirs = [Path(directory)]
     
@@ -41,6 +41,9 @@ def find_latest_video(directory=None):
             
         for file_path in search_dir.iterdir():
             if file_path.is_file() and file_path.suffix.lower() in config.SUPPORTED_FORMATS:
+                # Исключаем обработанные файлы
+                if file_path.name.startswith('processed_'):
+                    continue
                 mtime = file_path.stat().st_mtime
                 if mtime > latest_time:
                     latest_time = mtime
