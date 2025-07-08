@@ -84,13 +84,13 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
     ffmpeg_params = config.FFMPEG_PARAMS
     layout = config.LAYOUT
     
-    # Размеры областей
-    camera_height = 800
-    game_original_height = config.GAME_AREA['height']  # 415px - оригинальный размер
-    subtitles_height = 290  # Как в области кропа
-    
-    # Ширина всех областей - полная ширина экрана
+    # Вычисляем правильные размеры с сохранением пропорций
+    camera_original_ratio = config.CAMERA_AREA['width'] / config.CAMERA_AREA['height']  # 479/265 = 1.81
     camera_width = output_config['width']  # 1080px
+    camera_height = int(camera_width / camera_original_ratio)  # 596px
+    
+    game_original_height = config.GAME_AREA['height']  # 455px
+    subtitles_height = config.SUBTITLES_AREA['height']  # 265px
     subtitles_width = output_config['width']  # 1080px
     
     # Ищем фоновое изображение
@@ -119,7 +119,7 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
-            '-t', str(config.TEST_FRAGMENT['duration']),
+            '-shortest',  # Заканчиваем когда кончается самое короткое видео
             '-y',
             str(output_path)
         ]
@@ -147,7 +147,7 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
-            '-t', str(config.TEST_FRAGMENT['duration']),
+            '-shortest',  # Заканчиваем когда кончается самое короткое видео
             '-y',
             str(output_path)
         ]
