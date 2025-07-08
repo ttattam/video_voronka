@@ -105,13 +105,13 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-i', str(camera_path),             # Камера
             '-i', str(subtitles_path),          # Субтитры
             '-filter_complex', f"""
-            [0:v]scale={output_config['width']}:{output_config['height']}[bg];
-            [1:v]scale={output_config['width']}:{game_original_height}[game];
-            [2:v]scale={camera_width}:{camera_height}[camera];
-            [3:v]scale={subtitles_width}:{subtitles_height}[subtitles];
-            [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
-            [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
-            [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
+            [0:v]scale={output_config['width']}:{output_config['height']}:force_original_aspect_ratio=disable[bg];
+            [1:v]fps={output_config['fps']},scale={output_config['width']}:{game_original_height}:force_original_aspect_ratio=disable[game];
+            [2:v]fps={output_config['fps']},scale={camera_width}:{camera_height}:force_original_aspect_ratio=disable[camera];
+            [3:v]fps={output_config['fps']},scale={subtitles_width}:{subtitles_height}:force_original_aspect_ratio=disable[subtitles];
+            [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}:shortest=1[bg_with_camera];
+            [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}:shortest=1[bg_with_camera_subs];
+            [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}:shortest=1[final]
             """.strip().replace('\n', '').replace('    ', ''),
             '-map', '[final]',
             '-map', '1:a',  # Аудио из игрового видео
@@ -119,6 +119,8 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
+            '-avoid_negative_ts', 'make_zero',
+            '-fflags', '+genpts',
             '-shortest',  # Заканчиваем когда кончается самое короткое видео
             '-y',
             str(output_path)
@@ -126,13 +128,13 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
     else:
         # Без фонового изображения - серый фон
         filter_complex = f"""
-        [0:v]scale={output_config['width']}:{game_original_height}[game];
-        [1:v]scale={camera_width}:{camera_height}[camera];
-        [2:v]scale={subtitles_width}:{subtitles_height}[subtitles];
-        color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
-        [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
-        [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
-        [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
+        [0:v]fps={output_config['fps']},scale={output_config['width']}:{game_original_height}:force_original_aspect_ratio=disable[game];
+        [1:v]fps={output_config['fps']},scale={camera_width}:{camera_height}:force_original_aspect_ratio=disable[camera];
+        [2:v]fps={output_config['fps']},scale={subtitles_width}:{subtitles_height}:force_original_aspect_ratio=disable[subtitles];
+        color=c=#808080:size={output_config['width']}x{output_config['height']}:rate={output_config['fps']}[bg];
+        [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}:shortest=1[bg_with_camera];
+        [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}:shortest=1[bg_with_camera_subs];
+        [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}:shortest=1[final]
         """.strip().replace('\n', '').replace('    ', '')
         
         cmd = [
@@ -147,6 +149,8 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
+            '-avoid_negative_ts', 'make_zero',
+            '-fflags', '+genpts',
             '-shortest',  # Заканчиваем когда кончается самое короткое видео
             '-y',
             str(output_path)
