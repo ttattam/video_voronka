@@ -79,18 +79,19 @@ def crop_area(input_path, output_path, area_config, area_name):
     return run_ffmpeg_command(cmd, f"Обрезка области: {area_name}")
 
 def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
-    """Создание вертикального видео из трех частей с фоном"""
+    """Создание вертикального видео из трех частей с фоном - основная функция"""
     output_config = config.OUTPUT_VIDEO
     ffmpeg_params = config.FFMPEG_PARAMS
     layout = config.LAYOUT
     
-    # Высота верхней области (камера + субтитры)
-    top_area_height = 800
+    # Размеры областей
+    camera_height = 800
     game_original_height = config.GAME_AREA['height']  # 415px - оригинальный размер
+    subtitles_height = 290  # Как в области кропа
     
-    # Размеры областей в верхней части
-    camera_width = 540  # Половина от 1080px
-    subtitles_width = 540  # Половина от 1080px
+    # Ширина всех областей - полная ширина экрана
+    camera_width = output_config['width']  # 1080px
+    subtitles_width = output_config['width']  # 1080px
     
     # Ищем фоновое изображение
     bg_image = find_background_image()
@@ -106,8 +107,8 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-filter_complex', f"""
             [0:v]scale={output_config['width']}:{output_config['height']}[bg];
             [1:v]scale={output_config['width']}:{game_original_height}[game];
-            [2:v]scale={camera_width}:{top_area_height}[camera];
-            [3:v]scale={subtitles_width}:{top_area_height}[subtitles];
+            [2:v]scale={camera_width}:{camera_height}[camera];
+            [3:v]scale={subtitles_width}:{subtitles_height}[subtitles];
             [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
             [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
             [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
@@ -126,8 +127,8 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
         # Без фонового изображения - серый фон
         filter_complex = f"""
         [0:v]scale={output_config['width']}:{game_original_height}[game];
-        [1:v]scale={camera_width}:{top_area_height}[camera];
-        [2:v]scale={subtitles_width}:{top_area_height}[subtitles];
+        [1:v]scale={camera_width}:{camera_height}[camera];
+        [2:v]scale={subtitles_width}:{subtitles_height}[subtitles];
         color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
         [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
         [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
@@ -348,13 +349,14 @@ def create_vertical_video_clip(game_path, camera_path, subtitles_path, output_pa
     ffmpeg_params = config.FFMPEG_PARAMS
     layout = config.LAYOUT
     
-    # Высота верхней области (камера + субтитры)
-    top_area_height = 800
+    # Размеры областей
+    camera_height = 800
     game_original_height = config.GAME_AREA['height']  # 415px - оригинальный размер
+    subtitles_height = 290  # Как в области кропа
     
-    # Размеры областей в верхней части
-    camera_width = 540  # Половина от 1080px
-    subtitles_width = 540  # Половина от 1080px
+    # Ширина всех областей - полная ширина экрана
+    camera_width = output_config['width']  # 1080px
+    subtitles_width = output_config['width']  # 1080px
     
     # Ищем фоновое изображение
     bg_image = find_background_image()
@@ -370,8 +372,8 @@ def create_vertical_video_clip(game_path, camera_path, subtitles_path, output_pa
             '-filter_complex', f"""
             [0:v]scale={output_config['width']}:{output_config['height']}[bg];
             [1:v]scale={output_config['width']}:{game_original_height}[game];
-            [2:v]scale={camera_width}:{top_area_height}[camera];
-            [3:v]scale={subtitles_width}:{top_area_height}[subtitles];
+            [2:v]scale={camera_width}:{camera_height}[camera];
+            [3:v]scale={subtitles_width}:{subtitles_height}[subtitles];
             [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
             [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
             [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
@@ -390,8 +392,8 @@ def create_vertical_video_clip(game_path, camera_path, subtitles_path, output_pa
         # Без фонового изображения - серый фон
         filter_complex = f"""
         [0:v]scale={output_config['width']}:{game_original_height}[game];
-        [1:v]scale={camera_width}:{top_area_height}[camera];
-        [2:v]scale={subtitles_width}:{top_area_height}[subtitles];
+        [1:v]scale={camera_width}:{camera_height}[camera];
+        [2:v]scale={subtitles_width}:{subtitles_height}[subtitles];
         color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
         [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
         [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];

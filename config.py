@@ -41,9 +41,9 @@ OUTPUT_VIDEO = {
 
 # Компоновка в вертикальном видео
 LAYOUT = {
-    'camera_position': {'x': 0, 'y': 0},       # Камера сверху слева
-    'game_position': {'x': 0, 'y': 800},       # Игра снизу по центру
-    'subtitles_position': {'x': 540, 'y': 0},  # Субтитры сверху справа
+    'camera_position': {'x': 0, 'y': 0},       # Камера сверху
+    'game_position': {'x': 0, 'y': 800},       # Игра по центру
+    'subtitles_position': {'x': 0, 'y': 1215}, # Субтитры снизу игры (800 + 415)
     'background_color': 'black'  # Цвет фона для заполнения
 }
 
