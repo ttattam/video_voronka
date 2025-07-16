@@ -9,11 +9,11 @@ TEST_DIR = PROJECT_ROOT / "test"
 
 # Области для обрезки из горизонтального видео
 GAME_AREA = {
-    'x': 160, 'y': 0, 'width': 809, 'height': 455
+    'x': 160, 'y': 0, 'width': 840, 'height': 455
 }
 
 CAMERA_AREA = {
-    'x': 0, 'y': 455, 'width': 479, 'height': 265
+    'x': 0, 'y': 455, 'width': 470, 'height': 265
 }
 
 SUBTITLES_AREA = {
@@ -31,14 +31,14 @@ OUTPUT_VIDEO = {
 # Расположение областей в вертикальном видео
 LAYOUT = {
     'camera_position': {'x': 0, 'y': 0},      # Камера сверху, пропорциональный размер
-    'game_position': {'x': 0, 'y': 596},      # Игра под камерой (596px высота камеры)
+    'game_position': {'x': 120, 'y': 596},    # Игра под камерой, центрирована (1080-840)/2=120
     'subtitles_position': {'x': 0, 'y': 1051}  # Субтитры внизу (596 + 455)
 }
 
 # Параметры FFmpeg
 FFMPEG_PARAMS = {
-    'preset': 'medium',
-    'crf': 20,
+    'preset': 'ultrafast',
+    'crf': 0,
     'codec': 'libx264'
 }
 

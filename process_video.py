@@ -55,8 +55,8 @@ def create_time_fragment(input_path, output_path, start_time, duration):
     """Создание временного фрагмента из исходного видео"""
     cmd = [
         'ffmpeg',
-        '-i', str(input_path),
         '-ss', str(start_time),
+        '-i', str(input_path),
         '-t', str(duration),
         '-c', 'copy',
         '-y',
@@ -67,10 +67,14 @@ def create_time_fragment(input_path, output_path, start_time, duration):
 
 def crop_area(input_path, output_path, area_config, area_name):
     """Обрезка области из уже временного фрагмента"""
+    ffmpeg_params = config.FFMPEG_PARAMS
     cmd = [
         'ffmpeg',
         '-i', str(input_path),
         '-filter:v', f"crop={area_config['width']}:{area_config['height']}:{area_config['x']}:{area_config['y']}",
+        '-c:v', ffmpeg_params['codec'],
+        '-preset', ffmpeg_params['preset'],
+        '-crf', str(ffmpeg_params['crf']),
         '-c:a', 'copy',
         '-y',
         str(output_path)
@@ -106,7 +110,7 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
             '-i', str(subtitles_path),          # Субтитры
             '-filter_complex', f"""
             [0:v]scale={output_config['width']}:{output_config['height']}:force_original_aspect_ratio=disable[bg];
-            [1:v]fps={output_config['fps']},scale={output_config['width']}:{game_original_height}:force_original_aspect_ratio=disable[game];
+            [1:v]fps={output_config['fps']}[game];
             [2:v]fps={output_config['fps']},scale={camera_width}:{camera_height}:force_original_aspect_ratio=disable[camera];
             [3:v]fps={output_config['fps']},scale={subtitles_width}:{subtitles_height}:force_original_aspect_ratio=disable[subtitles];
             [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}:shortest=1[bg_with_camera];
@@ -128,7 +132,7 @@ def create_vertical_video(game_path, camera_path, subtitles_path, output_path):
     else:
         # Без фонового изображения - серый фон
         filter_complex = f"""
-        [0:v]fps={output_config['fps']},scale={output_config['width']}:{game_original_height}:force_original_aspect_ratio=disable[game];
+        [0:v]fps={output_config['fps']}[game];
         [1:v]fps={output_config['fps']},scale={camera_width}:{camera_height}:force_original_aspect_ratio=disable[camera];
         [2:v]fps={output_config['fps']},scale={subtitles_width}:{subtitles_height}:force_original_aspect_ratio=disable[subtitles];
         color=c=#808080:size={output_config['width']}x{output_config['height']}:rate={output_config['fps']}[bg];
@@ -369,39 +373,41 @@ def create_vertical_video_clip(game_path, camera_path, subtitles_path, output_pa
         # С фоновым изображением пушок
         cmd = [
             'ffmpeg',
-            '-loop', '1', '-i', str(bg_image),  # Фоновое изображение
             '-i', str(game_path),               # Игра
             '-i', str(camera_path),             # Камера
-            '-i', str(subtitles_path),          # Субтитры
+            '-i', str(subtitles_path),          # Субтитры  
+            '-loop', '1', '-i', str(bg_image),  # Фоновое изображение
             '-filter_complex', f"""
-            [0:v]scale={output_config['width']}:{output_config['height']}[bg];
-            [1:v]scale={output_config['width']}:{game_original_height}[game];
-            [2:v]scale={camera_width}:{camera_height}[camera];
-            [3:v]scale={subtitles_width}:{subtitles_height}[subtitles];
+            [3:v]scale={output_config['width']}:{output_config['height']}[bg];
+            [0:v]scale={output_config['width']}:{game_original_height}[game];
+            [1:v]scale={camera_width}:{camera_height}[camera];
+            [2:v]scale={subtitles_width}:{subtitles_height}[subtitles];
             [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
             [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
             [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
             """.strip().replace('\n', '').replace('    ', ''),
             '-map', '[final]',
-            '-map', '1:a',  # Аудио из игрового видео
+            '-map', '0:a',  # Аудио из игрового видео
             '-c:v', ffmpeg_params['codec'],
+            '-c:a', 'copy',
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
             '-t', str(duration),
+            '-shortest',
             '-y',
             str(output_path)
         ]
     else:
-        # Без фонового изображения - серый фон
+        # Без фонового изображения - серый фон с правильной длительностью
         filter_complex = f"""
         [0:v]scale={output_config['width']}:{game_original_height}[game];
         [1:v]scale={camera_width}:{camera_height}[camera];
         [2:v]scale={subtitles_width}:{subtitles_height}[subtitles];
-        color=c=#808080:size={output_config['width']}x{output_config['height']}[bg];
-        [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}[bg_with_camera];
-        [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}[bg_with_camera_subs];
-        [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}[final]
+        color=c=#808080:size={output_config['width']}x{output_config['height']}:duration={duration}:rate={output_config['fps']}[bg];
+        [bg][camera]overlay={layout['camera_position']['x']}:{layout['camera_position']['y']}:shortest=1[bg_with_camera];
+        [bg_with_camera][subtitles]overlay={layout['subtitles_position']['x']}:{layout['subtitles_position']['y']}:shortest=1[bg_with_camera_subs];
+        [bg_with_camera_subs][game]overlay={layout['game_position']['x']}:{layout['game_position']['y']}:shortest=1[final]
         """.strip().replace('\n', '').replace('    ', '')
         
         cmd = [
@@ -413,10 +419,12 @@ def create_vertical_video_clip(game_path, camera_path, subtitles_path, output_pa
             '-map', '[final]',
             '-map', '0:a',
             '-c:v', ffmpeg_params['codec'],
+            '-c:a', 'aac',
             '-preset', 'fast',
             '-crf', str(ffmpeg_params['crf']),
             '-r', str(output_config['fps']),
             '-t', str(duration),
+            '-shortest',
             '-y',
             str(output_path)
         ]
